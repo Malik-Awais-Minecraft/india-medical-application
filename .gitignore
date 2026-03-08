@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.env
+*.sqlite3
+*.db
+
+# Virtual Environment
+backend/venv/
+venv/
+env/
+.venv/
+
+# Uploaded files
+backend/uploaded_docs/
+
+# Node / Frontend
+frontend/node_modules/
+node_modules/
+frontend/dist/
+dist/
+
+# Build artifacts
+*.egg-info/
+.eggs/
+build/

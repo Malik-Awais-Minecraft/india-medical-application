@@ -1,0 +1,59 @@
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, BackgroundTasks
+from sqlalchemy.orm import Session
+from typing import List
+import os
+import uuid
+import shutil
+from app import models
+from app.database import get_db
+from app.tasks.pdf_parser import parse_pdf_task
+
+router = APIRouter(prefix="/documents", tags=["documents"])
+
+UPLOAD_DIR = "uploaded_docs"
+if not os.path.exists(UPLOAD_DIR):
+    os.makedirs(UPLOAD_DIR)
+
+@router.post("/upload/")
+async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.filename.endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported.")
+    
+    unique_filename = f"{uuid.uuid4()}_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    db_document = models.Document(
+        filename=file.filename,
+        file_path=file_path,
+        status="pending"
+    )
+    db.add(db_document)
+    db.commit()
+    db.refresh(db_document)
+    
+    # Trigger background task locally using FastAPI BackgroundTasks (since we don't have Redis running)
+    background_tasks.add_task(parse_pdf_task, db_document.id)
+    
+    return {"message": "Document uploaded successfully", "id": db_document.id, "filename": db_document.filename}
+
+@router.get("/")
+def list_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    documents = db.query(models.Document).offset(skip).limit(limit).all()
+    # Simple dictionary conversion for now
+    return [{"id": d.id, "filename": d.filename, "status": d.status, "created_at": d.created_at} for d in documents]
+
+@router.delete("/{document_id}")
+def delete_document(document_id: int, db: Session = Depends(get_db)):
+    document = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+        
+    if os.path.exists(document.file_path):
+        os.remove(document.file_path)
+        
+    db.delete(document)
+    db.commit()
+    return {"message": "Document deleted"}
