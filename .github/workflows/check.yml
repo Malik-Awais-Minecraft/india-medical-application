@@ -1,0 +1,21 @@
+name: Code Checks
+
+on:
+  push:
+    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "master", "main" ]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run a simple check
+        run: |
+          echo "Running checks for the repository..."
+          # Add any custom checks below, for example:
+          # python -m unittest discover
+          # npm test
+          echo "Checks completed successfully!"
