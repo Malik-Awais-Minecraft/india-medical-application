@@ -2,6 +2,10 @@
 __pycache__/
 *.py[cod]
 *.pyo
+
+# Environment files (NEVER commit API keys!)
+.env
+*.env
 *.pyd
 *.env
 .env
