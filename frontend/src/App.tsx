@@ -29,6 +29,7 @@ interface Alert {
   id: number;
   title: string;
   message: string;
+  document_id: number | null;
   is_read: boolean;
   created_at: string;
 }
@@ -57,8 +58,9 @@ function App() {
 
   // Alerts state
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [highlightedDocId, setHighlightedDocId] = useState<number | null>(null);
 
-  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
   useEffect(() => {
     if (!token) return;
@@ -204,7 +206,21 @@ function App() {
                     <p className="text-xs text-amber-700 mt-0.5">{alert.message}</p>
                   </div>
                 </div>
-                <button onClick={() => dismissAlert(alert.id)} className="text-amber-400 hover:text-amber-600 text-xs ml-4 flex-shrink-0">✕</button>
+                <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                  {alert.document_id && (
+                    <button
+                      onClick={() => {
+                        setHighlightedDocId(alert.document_id!);
+                        document.getElementById(`doc-row-${alert.document_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => setHighlightedDocId(null), 3000);
+                      }}
+                      className="text-xs text-amber-700 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded font-medium transition"
+                    >
+                      View File
+                    </button>
+                  )}
+                  <button onClick={() => dismissAlert(alert.id)} className="text-amber-400 hover:text-amber-600 text-xs">✕</button>
+                </div>
               </div>
             ))}
           </div>
@@ -301,7 +317,17 @@ function App() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {documents.map((doc) => (
-                    <tr key={doc.id} className={`transition ${chunkData?.document_id === doc.id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                    <tr
+                      key={doc.id}
+                      id={`doc-row-${doc.id}`}
+                      className={`transition duration-300 ${
+                        highlightedDocId === doc.id
+                          ? 'bg-amber-100 ring-2 ring-amber-300'
+                          : chunkData?.document_id === doc.id
+                          ? 'bg-indigo-50'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{doc.filename}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
