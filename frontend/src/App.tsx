@@ -356,6 +356,8 @@ function App() {
                               chunkData?.document_id === doc.id ? 'bg-indigo-600 text-white' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed'
                             }`}
                           >
+                            {chunkData?.document_id === doc.id ? 'Hide Chunks' : 'View Chunks'}
+                          </button>
                           {doc.user_id === userId && (
                             <button onClick={() => handleDelete(doc.id)} className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded text-xs font-medium transition">Delete</button>
                           )}
