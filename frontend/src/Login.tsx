@@ -3,7 +3,7 @@ import { useState } from 'react';
 const API_BASE_URL = 'http://localhost:8000';
 
 interface LoginProps {
-  onLogin: (token: string, name: string) => void;
+  onLogin: (token: string, name: string, id: number) => void;
 }
 
 export default function Login({ onLogin }: LoginProps) {
@@ -76,7 +76,7 @@ export default function Login({ onLogin }: LoginProps) {
 
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('user_name', me.full_name);
-      onLogin(data.access_token, me.full_name);
+      onLogin(data.access_token, me.full_name, me.id);
     } catch (err: any) {
       setError(err.message || 'Something went wrong.');
     } finally {

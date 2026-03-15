@@ -21,6 +21,7 @@ class Document(Base):
     file_path = Column(String)
     status = Column(String, default="pending")
     extracted_text = Column(Text, nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -43,5 +44,6 @@ class Alert(Base):
     title = Column(String)
     message = Column(Text)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -7,6 +7,7 @@ import shutil
 from app import models
 from app.database import get_db
 from app.tasks.pdf_parser import parse_pdf_task
+from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -15,7 +16,12 @@ if not os.path.exists(UPLOAD_DIR):
     os.makedirs(UPLOAD_DIR)
 
 @router.post("/upload/")
-async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_document(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
     
@@ -28,7 +34,8 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
     db_document = models.Document(
         filename=file.filename,
         file_path=file_path,
-        status="pending"
+        status="pending",
+        user_id=current_user.id
     )
     db.add(db_document)
     db.commit()
@@ -37,8 +44,9 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
     # Create an evidence alert for the new upload
     alert = models.Alert(
         title="New Guideline Uploaded",
-        message=f'"{file.filename}" has been uploaded and is being processed.',
+        message=f'"{file.filename}" was uploaded by {current_user.full_name}.',
         document_id=db_document.id,
+        user_id=current_user.id
     )
     db.add(alert)
     db.commit()
@@ -51,14 +59,20 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
 @router.get("/")
 def list_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     documents = db.query(models.Document).offset(skip).limit(limit).all()
-    # Simple dictionary conversion for now
-    return [{"id": d.id, "filename": d.filename, "status": d.status, "created_at": d.created_at} for d in documents]
+    return [{"id": d.id, "filename": d.filename, "status": d.status, "created_at": d.created_at, "user_id": d.user_id} for d in documents]
 
 @router.delete("/{document_id}")
-def delete_document(document_id: int, db: Session = Depends(get_db)):
+def delete_document(
+    document_id: int, 
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
     document = db.query(models.Document).filter(models.Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
+        
+    if document.user_id != current_user.id and current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="You can only delete documents you uploaded.")
         
     if os.path.exists(document.file_path):
         os.remove(document.file_path)

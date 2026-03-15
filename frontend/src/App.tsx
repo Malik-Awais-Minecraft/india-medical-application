@@ -5,6 +5,7 @@ interface Document {
   id: number;
   filename: string;
   status: string;
+  user_id: number;
   created_at: string;
 }
 
@@ -40,6 +41,10 @@ function App() {
   // Auth state
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
   const [userName, setUserName] = useState<string>(localStorage.getItem('user_name') || '');
+  const [userId, setUserId] = useState<number | null>(() => {
+    const savedId = localStorage.getItem('user_id');
+    return savedId ? parseInt(savedId, 10) : null;
+  });
 
   const [documents, setDocuments] = useState<Document[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -95,16 +100,20 @@ function App() {
     setAlerts(prev => prev.filter(a => a.id !== id));
   };
 
-  const handleLogin = (newToken: string, name: string) => {
+  const handleLogin = (newToken: string, name: string, id: number) => {
     setToken(newToken);
     setUserName(name);
+    setUserId(id);
+    localStorage.setItem('user_id', id.toString());
   };
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('user_name');
+    localStorage.removeItem('user_id');
     setToken(null);
     setUserName('');
+    setUserId(null);
     setDocuments([]);
     setAlerts([]);
   };
@@ -347,9 +356,9 @@ function App() {
                               chunkData?.document_id === doc.id ? 'bg-indigo-600 text-white' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed'
                             }`}
                           >
-                            {chunkData?.document_id === doc.id ? 'Hide Chunks' : 'View Chunks'}
-                          </button>
-                          <button onClick={() => handleDelete(doc.id)} className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded text-xs font-medium transition">Delete</button>
+                          {doc.user_id === userId && (
+                            <button onClick={() => handleDelete(doc.id)} className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded text-xs font-medium transition">Delete</button>
+                          )}
                         </div>
                       </td>
                     </tr>
