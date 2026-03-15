@@ -57,3 +57,26 @@ def delete_document(document_id: int, db: Session = Depends(get_db)):
     db.delete(document)
     db.commit()
     return {"message": "Document deleted"}
+
+@router.get("/{document_id}/chunks")
+def get_document_chunks(document_id: int, db: Session = Depends(get_db)):
+    document = db.query(models.Document).filter(models.Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    
+    chunks = (
+        db.query(models.DocumentChunk)
+        .filter(models.DocumentChunk.document_id == document_id)
+        .order_by(models.DocumentChunk.chunk_index)
+        .all()
+    )
+    return {
+        "document_id": document_id,
+        "filename": document.filename,
+        "total_chunks": len(chunks),
+        "chunks": [
+            {"index": c.chunk_index, "text": c.chunk_text}
+            for c in chunks
+        ]
+    }
+
