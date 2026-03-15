@@ -33,8 +33,17 @@ async def upload_document(background_tasks: BackgroundTasks, file: UploadFile = 
     db.add(db_document)
     db.commit()
     db.refresh(db_document)
-    
-    # Trigger background task locally using FastAPI BackgroundTasks (since we don't have Redis running)
+
+    # Create an evidence alert for the new upload
+    alert = models.Alert(
+        title="New Guideline Uploaded",
+        message=f'"{file.filename}" has been uploaded and is being processed.',
+        document_id=db_document.id,
+    )
+    db.add(alert)
+    db.commit()
+
+    # Trigger background task
     background_tasks.add_task(parse_pdf_task, db_document.id)
     
     return {"message": "Document uploaded successfully", "id": db_document.id, "filename": db_document.filename}

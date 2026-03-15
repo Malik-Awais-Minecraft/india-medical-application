@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import Login from './Login';
 
 interface Document {
   id: number;
@@ -24,9 +25,21 @@ interface ChunkData {
   chunks: Chunk[];
 }
 
+interface Alert {
+  id: number;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
 const API_BASE_URL = 'http://localhost:8000';
 
 function App() {
+  // Auth state
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [userName, setUserName] = useState<string>(localStorage.getItem('user_name') || '');
+
   const [documents, setDocuments] = useState<Document[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,20 +55,56 @@ function App() {
   const [chunkLoading, setChunkLoading] = useState(false);
   const [expandedChunk, setExpandedChunk] = useState<number | null>(null);
 
+  // Alerts state
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+
+  const authHeaders = token ? { Authorization: `Bearer ${token}` } : {};
+
   useEffect(() => {
+    if (!token) return;
     fetchDocuments();
-    const interval = setInterval(fetchDocuments, 5000);
+    fetchAlerts();
+    const interval = setInterval(() => { fetchDocuments(); fetchAlerts(); }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [token]);
 
   const fetchDocuments = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/`);
+      const response = await fetch(`${API_BASE_URL}/documents/`, { headers: authHeaders });
+      if (response.status === 401) { handleLogout(); return; }
       if (!response.ok) throw new Error('Failed to fetch documents');
       setDocuments(await response.json());
     } catch (err: any) {
       setError(err.message || 'Could not connect to backend.');
     }
+  };
+
+  const fetchAlerts = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/alerts/`, { headers: authHeaders });
+      if (!response.ok) return;
+      const data: Alert[] = await response.json();
+      setAlerts(data.filter(a => !a.is_read));
+    } catch { /* silent */ }
+  };
+
+  const dismissAlert = async (id: number) => {
+    await fetch(`${API_BASE_URL}/alerts/${id}/read`, { method: 'PATCH', headers: authHeaders });
+    setAlerts(prev => prev.filter(a => a.id !== id));
+  };
+
+  const handleLogin = (newToken: string, name: string) => {
+    setToken(newToken);
+    setUserName(name);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user_name');
+    setToken(null);
+    setUserName('');
+    setDocuments([]);
+    setAlerts([]);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,9 +115,9 @@ function App() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/upload/`, { method: 'POST', body: formData });
+      const response = await fetch(`${API_BASE_URL}/documents/upload/`, { method: 'POST', body: formData, headers: authHeaders });
       if (!response.ok) { const e = await response.json(); throw new Error(e.detail || 'Upload failed'); }
-      fetchDocuments();
+      fetchDocuments(); fetchAlerts();
     } catch (err: any) {
       setError(err.message || 'Upload failed.');
     } finally {
@@ -80,7 +129,7 @@ function App() {
   const handleDelete = async (id: number) => {
     if (chunkData?.document_id === id) setChunkData(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/${id}`, { method: 'DELETE' });
+      const response = await fetch(`${API_BASE_URL}/documents/${id}`, { method: 'DELETE', headers: authHeaders });
       if (!response.ok) throw new Error('Failed to delete');
       fetchDocuments();
     } catch { alert('Failed to delete document'); }
@@ -92,7 +141,7 @@ function App() {
     try {
       const response = await fetch(`${API_BASE_URL}/qa/`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ question: question.trim() }),
       });
       if (!response.ok) { const e = await response.json(); throw new Error(e.detail || 'Q&A failed'); }
@@ -108,7 +157,7 @@ function App() {
     if (chunkData?.document_id === doc.id) { setChunkData(null); return; }
     setChunkLoading(true); setChunkData(null); setExpandedChunk(null);
     try {
-      const response = await fetch(`${API_BASE_URL}/documents/${doc.id}/chunks`);
+      const response = await fetch(`${API_BASE_URL}/documents/${doc.id}/chunks`, { headers: authHeaders });
       if (!response.ok) throw new Error('Failed to load chunks');
       setChunkData(await response.json());
     } catch (err: any) {
@@ -118,15 +167,48 @@ function App() {
     }
   };
 
+  if (!token) {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
 
         {/* Header */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight sm:text-5xl">Residency Companion</h1>
-          <p className="mt-3 text-xl text-gray-500">AI-Powered Medical Decision Support</p>
+        <div className="flex justify-between items-start mb-10">
+          <div>
+            <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">Residency Companion</h1>
+            <p className="mt-1 text-gray-500">AI-Powered Medical Decision Support</p>
+          </div>
+          <div className="flex items-center gap-3 mt-1">
+            <span className="text-sm text-gray-500">👋 {userName}</span>
+            <button
+              onClick={handleLogout}
+              className="text-xs text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
+
+        {/* Alert Banner */}
+        {alerts.length > 0 && (
+          <div className="mb-6 space-y-2">
+            {alerts.map(alert => (
+              <div key={alert.id} className="flex items-start justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <span className="text-amber-500 mt-0.5 flex-shrink-0">🔔</span>
+                  <div>
+                    <p className="text-sm font-semibold text-amber-800">{alert.title}</p>
+                    <p className="text-xs text-amber-700 mt-0.5">{alert.message}</p>
+                  </div>
+                </div>
+                <button onClick={() => dismissAlert(alert.id)} className="text-amber-400 hover:text-amber-600 text-xs ml-4 flex-shrink-0">✕</button>
+              </div>
+            ))}
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center shadow-sm">
@@ -144,18 +226,13 @@ function App() {
           <p className="text-sm text-gray-500 mb-5">Ask anything based on the uploaded medical guidelines.</p>
           <div className="flex gap-3 mb-4">
             <input
-              type="text"
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
+              type="text" value={question} onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleAskQuestion()}
               placeholder="e.g. What are the ICMR guidelines for diabetes management?"
               className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
-            <button
-              onClick={handleAskQuestion}
-              disabled={qaLoading || !question.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-5 py-2 rounded-lg text-sm font-semibold transition duration-150 flex items-center gap-2"
-            >
+            <button onClick={handleAskQuestion} disabled={qaLoading || !question.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-5 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2">
               {qaLoading ? (<><svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Thinking...</>) : 'Ask'}
             </button>
           </div>
@@ -167,9 +244,7 @@ function App() {
                 <div className="mt-4 pt-3 border-t border-indigo-200">
                   <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">Sources</p>
                   <div className="flex flex-wrap gap-2">
-                    {qaResult.sources.map((src, i) => (
-                      <span key={i} className="px-2 py-1 bg-white border border-indigo-200 text-indigo-700 text-xs rounded-full font-medium">{src}</span>
-                    ))}
+                    {qaResult.sources.map((src, i) => <span key={i} className="px-2 py-1 bg-white border border-indigo-200 text-indigo-700 text-xs rounded-full font-medium">{src}</span>)}
                   </div>
                 </div>
               )}
@@ -183,7 +258,7 @@ function App() {
             <svg className="w-6 h-6 mr-2 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
             Upload Medical Guidelines
           </h2>
-          <div className="flex flex-col items-center justify-center border-2 border-gray-300 border-dashed rounded-xl p-10 bg-gray-50 hover:bg-gray-100 transition duration-150">
+          <div className="flex flex-col items-center justify-center border-2 border-gray-300 border-dashed rounded-xl p-10 bg-gray-50 hover:bg-gray-100 transition">
             <svg className="mx-auto h-12 w-12 text-gray-400 mb-4" stroke="currentColor" fill="none" viewBox="0 0 48 48">
               <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
@@ -208,7 +283,7 @@ function App() {
               <svg className="w-6 h-6 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
               Ingested Guidelines
             </h2>
-            <button onClick={fetchDocuments} className="text-sm text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-md transition duration-150">Refresh</button>
+            <button onClick={fetchDocuments} className="text-sm text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-3 py-1 rounded-md transition">Refresh</button>
           </div>
 
           {documents.length === 0 ? (
@@ -226,7 +301,7 @@ function App() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {documents.map((doc) => (
-                    <tr key={doc.id} className={`transition duration-150 ${chunkData?.document_id === doc.id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
+                    <tr key={doc.id} className={`transition ${chunkData?.document_id === doc.id ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{doc.filename}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm">
                         <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full
@@ -242,21 +317,13 @@ function App() {
                           <button
                             onClick={() => handleViewChunks(doc)}
                             disabled={doc.status !== 'completed'}
-                            title={doc.status !== 'completed' ? 'Available once processing completes' : ''}
-                            className={`px-3 py-1 rounded text-xs font-medium transition duration-150 ${
-                              chunkData?.document_id === doc.id
-                                ? 'bg-indigo-600 text-white'
-                                : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed'
+                            className={`px-3 py-1 rounded text-xs font-medium transition ${
+                              chunkData?.document_id === doc.id ? 'bg-indigo-600 text-white' : 'text-indigo-600 bg-indigo-50 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed'
                             }`}
                           >
                             {chunkData?.document_id === doc.id ? 'Hide Chunks' : 'View Chunks'}
                           </button>
-                          <button
-                            onClick={() => handleDelete(doc.id)}
-                            className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded text-xs font-medium transition duration-150"
-                          >
-                            Delete
-                          </button>
+                          <button onClick={() => handleDelete(doc.id)} className="text-red-600 hover:text-red-900 bg-red-50 hover:bg-red-100 px-3 py-1 rounded text-xs font-medium transition">Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -266,14 +333,13 @@ function App() {
             </div>
           )}
 
-          {/* Chunk Viewer Panel */}
+          {/* Chunk Viewer */}
           {chunkLoading && (
             <div className="mt-6 flex items-center justify-center py-8 text-sm text-gray-400">
               <svg className="animate-spin mr-2 h-5 w-5 text-indigo-400" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
               Loading chunks...
             </div>
           )}
-
           {chunkData && !chunkLoading && (
             <div className="mt-6 border-t border-gray-100 pt-6">
               <div className="flex justify-between items-start mb-4">
@@ -286,33 +352,18 @@ function App() {
                 </div>
                 <button onClick={() => setChunkData(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕ Close</button>
               </div>
-
               <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
                 {chunkData.chunks.map((chunk) => (
-                  <div
-                    key={chunk.index}
-                    onClick={() => setExpandedChunk(expandedChunk === chunk.index ? null : chunk.index)}
-                    className={`border rounded-lg cursor-pointer transition-all duration-150 ${
-                      expandedChunk === chunk.index
-                        ? 'border-indigo-300 bg-indigo-50'
-                        : 'border-gray-200 bg-gray-50 hover:border-indigo-200 hover:bg-indigo-50/50'
-                    }`}
-                  >
+                  <div key={chunk.index} onClick={() => setExpandedChunk(expandedChunk === chunk.index ? null : chunk.index)}
+                    className={`border rounded-lg cursor-pointer transition-all ${expandedChunk === chunk.index ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 bg-gray-50 hover:border-indigo-200'}`}>
                     <div className="flex items-center justify-between px-4 py-3 gap-3">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded flex-shrink-0">
-                          #{chunk.index + 1}
-                        </span>
+                        <span className="text-xs font-bold text-indigo-600 bg-indigo-100 px-1.5 py-0.5 rounded flex-shrink-0">#{chunk.index + 1}</span>
                         {expandedChunk !== chunk.index && (
-                          <p className="text-sm text-gray-600 truncate">
-                            {chunk.text.slice(0, 120)}{chunk.text.length > 120 ? '…' : ''}
-                          </p>
+                          <p className="text-sm text-gray-600 truncate">{chunk.text.slice(0, 120)}{chunk.text.length > 120 ? '…' : ''}</p>
                         )}
                       </div>
-                      <svg
-                        className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform duration-150 ${expandedChunk === chunk.index ? 'rotate-180' : ''}`}
-                        fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                      >
+                      <svg className={`w-4 h-4 text-gray-400 flex-shrink-0 transition-transform ${expandedChunk === chunk.index ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"/>
                       </svg>
                     </div>
