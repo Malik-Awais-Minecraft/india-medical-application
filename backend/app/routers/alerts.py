@@ -20,6 +20,7 @@ def list_alerts(db: Session = Depends(get_db)):
             "title": a.title,
             "message": a.message,
             "document_id": a.document_id,
+            "user_id": a.user_id,
             "is_read": a.is_read,
             "created_at": a.created_at,
         }
