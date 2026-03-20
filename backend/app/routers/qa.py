@@ -59,10 +59,12 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
     # 4. Build context for GPT
     context_parts = []
     sources = []
+    fallback_related_lines = []
     for score, chunk in top_chunks:
         doc = db.query(models.Document).filter(models.Document.id == chunk.document_id).first()
         doc_name = doc.filename if doc else "Unknown"
         context_parts.append(f"[Source: {doc_name}]\n{chunk.chunk_text}")
+        fallback_related_lines.append({"text": chunk.chunk_text, "source": doc_name})
         if doc_name not in sources:
             sources.append(doc_name)
 
@@ -70,6 +72,7 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
 
     # 5. Call OpenAI
     from dotenv import load_dotenv
+    import json
     load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY", "")
 
@@ -77,7 +80,8 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
         # Return context-only response when no key is set
         return {
             "answer": "⚠️ OpenAI API key not configured. Here are the most relevant passages found:\n\n" + context,
-            "sources": sources
+            "sources": sources,
+            "related_lines": fallback_related_lines
         }
 
     try:
@@ -88,23 +92,34 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
             "You are a medical information assistant for Indian physicians. "
             "Answer the question below using ONLY the provided context from medical guidelines. "
             "Be precise, cite your sources by document name, and add a disclaimer that this is "
-            "for reference only and clinical judgment must be applied."
+            "for reference only and clinical judgment must be applied.\n"
+            "You MUST respond ONLY with a JSON object possessing exactly two keys:\n"
+            "\"answer\": your detailed final text response.\n"
+            "\"quotes\": a list of objects, each with \"text\" for the exact sentence you reproduced from the context, and \"source\" for the document name it comes from."
         )
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
+            response_format={ "type": "json_object" },
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Context:\n{context}\n\nQuestion: {question}"},
             ],
             temperature=0.2,
-            max_tokens=800,
+            max_tokens=1500,
         )
 
-        answer = response.choices[0].message.content
+        result_content = response.choices[0].message.content
+        try:
+            parsed = json.loads(result_content)
+            answer = parsed.get("answer", "No answer generated.")
+            related_lines = parsed.get("quotes", [])
+        except json.JSONDecodeError:
+            answer = result_content
+            related_lines = []
 
     except Exception as e:
         logger.error(f"OpenAI call failed: {e}")
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
 
-    return {"answer": answer, "sources": sources}
+    return {"answer": answer, "sources": sources, "related_lines": related_lines}

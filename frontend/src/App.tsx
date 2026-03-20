@@ -12,6 +12,7 @@ interface Document {
 interface QAResult {
   answer: string;
   sources: string[];
+  related_lines?: { text: string; source: string }[];
 }
 
 interface Chunk {
@@ -270,6 +271,19 @@ function App() {
                   <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">Sources</p>
                   <div className="flex flex-wrap gap-2">
                     {qaResult.sources.map((src, i) => <span key={i} className="px-2 py-1 bg-white border border-indigo-200 text-indigo-700 text-xs rounded-full font-medium">{src}</span>)}
+                  </div>
+                </div>
+              )}
+              {qaResult.related_lines && qaResult.related_lines.length > 0 && (
+                <div className="mt-4 pt-3 border-t border-indigo-200">
+                  <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide mb-2">Exact Quotes Used</p>
+                  <div className="space-y-2">
+                    {qaResult.related_lines.map((line, i) => (
+                      <div key={i} className="bg-white p-3 rounded border border-indigo-100 text-xs text-gray-700 relative shadow-sm hover:shadow transition-shadow">
+                        <span className="absolute top-2 right-2 px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-semibold text-[10px]">{line.source}</span>
+                        <p className="pr-16 italic">"{line.text}"</p>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
