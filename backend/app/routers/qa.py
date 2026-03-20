@@ -116,9 +116,24 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
             parsed = json.loads(result_content)
             answer = parsed.get("answer", "No answer generated.")
             related_lines = parsed.get("quotes", [])
+            
+            # Map the actual cited sources from the generated quotes
+            actual_sources = []
+            if related_lines:
+                for quote in related_lines:
+                    # Some quotes might not have a source attached if model hallucinates schema slightly
+                    src = quote.get("source")
+                    if src and src not in actual_sources:
+                        actual_sources.append(src)
+                sources = actual_sources
+            elif "cannot answer" in answer.lower() or "cannot provide" in answer.lower():
+                sources = []
+                
         except json.JSONDecodeError:
             answer = result_content
             related_lines = []
+            if "cannot answer" in answer.lower() or "cannot provide" in answer.lower():
+                sources = []
 
     except Exception as e:
         logger.error(f"OpenAI call failed: {e}")
