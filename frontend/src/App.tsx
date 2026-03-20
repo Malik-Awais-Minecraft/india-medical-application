@@ -57,6 +57,8 @@ function App() {
   const [qaLoading, setQaLoading] = useState(false);
   const [qaError, setQaError] = useState<string | null>(null);
 
+  const [selectedDocIds, setSelectedDocIds] = useState<number[]>([]);
+
   // Chunk viewer state
   const [chunkData, setChunkData] = useState<ChunkData | null>(null);
   const [chunkLoading, setChunkLoading] = useState(false);
@@ -154,7 +156,10 @@ function App() {
       const response = await fetch(`${API_BASE_URL}/qa/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ question: question.trim() }),
+        body: JSON.stringify({ 
+          question: question.trim(),
+          document_ids: selectedDocIds.length > 0 ? selectedDocIds : undefined
+        }),
       });
       if (!response.ok) { const e = await response.json(); throw new Error(e.detail || 'Q&A failed'); }
       setQaResult(await response.json());
@@ -249,7 +254,48 @@ function App() {
             <svg className="w-6 h-6 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
             Ask a Medical Question
           </h2>
-          <p className="text-sm text-gray-500 mb-5">Ask anything based on the uploaded medical guidelines.</p>
+          <p className="text-sm text-gray-500 mb-4">Ask anything based on the uploaded medical guidelines.</p>
+
+          {documents.filter(d => d.status === 'completed').length > 0 && (
+            <div className="mb-5 bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex justify-between items-center mb-3">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wider">Search in specific documents (Optional)</p>
+                <button 
+                  onClick={() => {
+                      const completedDocs = documents.filter(d => d.status === 'completed');
+                      if (selectedDocIds.length === completedDocs.length) {
+                          setSelectedDocIds([]);
+                      } else {
+                          setSelectedDocIds(completedDocs.map(d => d.id));
+                      }
+                  }}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition"
+                >
+                  {selectedDocIds.length === documents.filter(d => d.status === 'completed').length ? 'Deselect All' : 'Select All'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {documents.filter(d => d.status === 'completed').map(doc => {
+                  const isSelected = selectedDocIds.includes(doc.id);
+                  return (
+                    <button
+                      key={doc.id}
+                      onClick={() => setSelectedDocIds(prev => isSelected ? prev.filter(id => id !== doc.id) : [...prev, doc.id])}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                        isSelected 
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' 
+                          : 'bg-white text-gray-700 border-gray-300 hover:border-indigo-400 hover:bg-indigo-50'
+                      }`}
+                    >
+                      {isSelected && <span className="mr-1.5 inline-block">✓</span>}
+                      {doc.filename}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex gap-3 mb-4">
             <input
               type="text" value={question} onChange={(e) => setQuestion(e.target.value)}

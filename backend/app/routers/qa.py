@@ -13,6 +13,7 @@ router = APIRouter(prefix="/qa", tags=["Q&A"])
 
 class QuestionRequest(BaseModel):
     question: str
+    document_ids: list[int] | None = None
 
 
 def cosine_similarity(a: list, b: list) -> float:
@@ -38,13 +39,23 @@ def ask_question(request: QuestionRequest, db: Session = Depends(get_db)):
     model = _get_embedding_model()
     question_embedding = model.encode(question).tolist()
 
-    # 2. Load all chunks from DB
-    chunks = db.query(models.DocumentChunk).all()
-    if not chunks:
-        return {
-            "answer": "No documents have been ingested yet. Please upload some medical guidelines first.",
-            "sources": []
-        }
+    # 2. Load chunks from DB
+    if request.document_ids:
+        chunks = db.query(models.DocumentChunk).filter(models.DocumentChunk.document_id.in_(request.document_ids)).all()
+        if not chunks:
+            return {
+                "answer": "No content found for the selected documents.",
+                "sources": [],
+                "related_lines": []
+            }
+    else:
+        chunks = db.query(models.DocumentChunk).all()
+        if not chunks:
+            return {
+                "answer": "No documents have been ingested yet. Please upload some medical guidelines first.",
+                "sources": [],
+                "related_lines": []
+            }
 
     # 3. Rank by cosine similarity
     scored = []
